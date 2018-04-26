@@ -1,0 +1,109 @@
+--I used three different ways to query profit and profit per product ID per year. I think this usually needs to be caculated from a individual unit sold level. 
+--Because that level of details are not in the AdventureWorks sample data, I used total sales - total cost on  product ID level instead of individual item level
+--to calcualte profit for that product for the year 2007
+
+-Approach 1: use multiple INNER JOIN only.
+
+		SELECT	p.Name AS ProductName, 
+				p.ProductLine,
+				SUM(sd.OrderQty) AS Quantity,
+				MONTH(h.OrderDate) AS PURCHASE_MONTH,
+				sd.ProductID AS ProductID,
+				SUM(h.TotalDue) AS TotalCost,
+				SUM(sh.TotalDue) AS TotalSales,
+				SUM(sh.TotalDue) - SUM(h.TotalDue) AS Profit,
+				SUM(sh.TotalDue) - SUM(h.TotalDue)/SUM(sh.TotalDue) AS ProfitMargin
+		FROM [Purchasing].[Vendor] v 
+		INNER JOIN [Purchasing].[PurchaseOrderHeader] h
+			ON	v.BusinessEntityID = h.VendorID
+		INNER JOIN [Purchasing].[PurchaseOrderDetail] d
+			ON	h.PurchaseOrderID = d.PurchaseOrderID
+		INNER JOIN [Production].[Product] p
+			ON	p.ProductID = d.ProductID 
+		INNER JOIN [Sales].[SalesOrderDetail] sd
+			ON sd.ProductID = d.ProductID
+		INNER JOIN [Sales].[SalesOrderHeader] sh
+			ON sd.SalesOrderID = sh.SalesOrderID
+		WHERE	YEAR(h.OrderDate) = 2007 
+			AND v.PreferredVendorStatus = 1
+			and sd.ProductID = 952
+		GROUP BY p.Name, p.ProductLine, sd.ProductID, month(h.OrderDate)
+		ORDER BY MONTH(h.OrderDate) ASC
+
+
+
+-Approach 2: use subqueries.
+
+
+		SELECT	p.Name AS ProductName, 
+				p.ProductLine,
+				SUM(sales.OrderQty) AS Quantity,
+				MONTH(h.OrderDate) AS PURCHASE_MONTH,
+				sales.ProductID AS ProductID,
+				SUM(h.TotalDue) AS TotalCost,
+				SUM(sales.TotalDue) AS TotalSales,
+				SUM(sales.TotalDue) - SUM(h.TotalDue) AS Profit,
+				SUM(sales.TotalDue) - SUM(h.TotalDue)/SUM(sales.TotalDue) AS ProfitMargin
+		FROM [Purchasing].[Vendor] v 
+		INNER JOIN [Purchasing].[PurchaseOrderHeader] h
+			ON	v.BusinessEntityID = h.VendorID
+		INNER JOIN [Purchasing].[PurchaseOrderDetail] d
+			ON	h.PurchaseOrderID = d.PurchaseOrderID
+		INNER JOIN [Production].[Product] p
+			ON	p.ProductID = d.ProductID 
+		INNER JOIN (
+			SELECT sd.ProductID, sd.OrderQty,  sh.TotalDue
+			FROM [Sales].[SalesOrderDetail] sd
+			INNER JOIN [Sales].[SalesOrderHeader] sh
+			ON sd.SalesOrderID = sh.SalesOrderID
+			
+		) sales
+		ON sales.ProductID = d.ProductID
+
+		WHERE	YEAR(h.OrderDate) = 2007 
+			AND v.PreferredVendorStatus = 1
+			and sales.ProductID = 952
+		GROUP BY p.Name, p.ProductLine, sales.ProductID, month(h.OrderDate)
+		ORDER BY MONTH(h.OrderDate) ASC
+
+
+
+-Approach 3: use comment table expression.
+
+
+		;with orders as (
+			select p.Name, p.ProductID, p.ProductLine, h.OrderDate, h.TotalDue
+			from [Purchasing].[Vendor] v 
+			INNER JOIN [Purchasing].[PurchaseOrderHeader] h
+				ON	v.BusinessEntityID = h.VendorID
+			INNER JOIN [Purchasing].[PurchaseOrderDetail] d
+				ON	h.PurchaseOrderID = d.PurchaseOrderID
+			INNER JOIN [Production].[Product] p
+				ON	p.ProductID = d.ProductID 
+			WHERE	YEAR(h.OrderDate) = 2007 
+			AND v.PreferredVendorStatus = 1	
+		)
+		SELECT	orders.Name AS ProductName,
+				orders.ProductLine,
+				SUM(sales.OrderQty) AS Quantity,
+				MONTH(orders.OrderDate) AS PURCHASE_MONTH,
+				sales.ProductID AS ProductID,
+				SUM(orders.TotalDue) AS TotalCost,
+				SUM(sales.TotalDue) AS TotalSales,
+				SUM(sales.TotalDue) - SUM(orders.TotalDue) AS Profit,
+				SUM(sales.TotalDue) - SUM(orders.TotalDue)/SUM(sales.TotalDue) AS ProfitMargin
+		FROM	orders
+
+
+		INNER JOIN (
+			SELECT sd.ProductID, sd.OrderQty, sh.TotalDue
+			FROM [Sales].[SalesOrderDetail] sd
+			INNER JOIN [Sales].[SalesOrderHeader] sh
+			ON sd.SalesOrderID = sh.SalesOrderID
+			
+		) sales
+		ON sales.ProductID = orders.ProductID
+
+		WHERE	sales.ProductID = 952
+		GROUP BY orders.Name, orders.ProductLine, sales.ProductID, month(orders.OrderDate)
+		ORDER BY MONTH(orders.OrderDate) ASC
